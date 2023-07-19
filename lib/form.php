@@ -1,8 +1,11 @@
 <?php
 
-function input($id){
+function input($id, $type = 'text'){
+    if($type === 'file') {
+        return "<input type='file' id='$id' name='$id'>";
+    }
     $value = isset($_POST[$id]) ? $_POST[$id] : '';
-    return "<input type='text' id='$id' name='$id' value='$value'>";
+    return "<input type='$type' id='$id' name='$id' value='$value'>";
 };
 
 function textarea($id){

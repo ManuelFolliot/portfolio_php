@@ -12,7 +12,7 @@ if(isset($_POST['name']) && isset($_POST['slug'])){
         $content = $db->quote($_POST['content']); 
 
         /**
-         * SAUVGEGARDE DE LA REALISATION
+         * SAUVEGARDE DE LA REALISATION
          **/
 
 
@@ -29,17 +29,24 @@ if(isset($_POST['name']) && isset($_POST['slug'])){
          *ENVOIE DE L'IMAGE
          **/
 
-        $work_id = $db->quote($_GET['id']);
-        $image = $_FILES['image'];
-        $extension = pathinfo($image['name'], PATHINFO_EXTENSION);
-        if(in_array($extension, array('jpg', 'png'))){
-            $db->query("INSERT INTO images SET work_id=$work_id");
-            $image_id = $db->lastInsertId();
-            $image_name = $image_id . '.' . $extension;
-            move_uploaded_file($image['tmp_name'], IMAGES . '/works/' . $image_name);
-            $image_name = $db->quote($image_name);
-            $db->query("UPDATE images SET name=$image_name WHERE id = $image_id");
+        if (isset($_FILES['images'])){
+            $work_id = $db->quote($_GET['id']);
+
+            foreach ($_FILES['images']['tmp_name'] as $key => $tmp_name) {
+                $image = $_FILES['images'];
+                $extension = pathinfo($image['name'][$key], PATHINFO_EXTENSION);
+
+                if(in_array($extension, array('jpg', 'png'))) {
+                    $db->query("INSERT INTO images set work_id=$work_id");
+                    $image_id = $db->lastInsertId();
+                    $image_name = $image_id . '.' . $extension;
+                    move_uploaded_file($tmp_name, IMAGES . '/works/' . $image_name);
+                    $image_name = $db->quote($image_name);
+                    $db->query("UPDATE images SET name=$image_name WHERE id = $image_id");
+                }
+            }
         }
+
         header('Location:work.php');
         die();
     }else{
@@ -66,17 +73,39 @@ if(isset($_GET['id'])){
  * SUPPRESSION D'IMAGES
  **/
 
-if(isset($_GET['delete_image'])){
+ if (isset($_GET['delete_image'])) {
     checkCSRF();
     $image_id = $_GET['delete_image'];
-    $select = $db->query("SELECT name, work_id FROM images WHERE id=$image_id");
-    $image = $select->fetch();
-    unlink(IMAGES . '/works/' . $image['name']);
-    $db->query("DELETE FROM images WHERE id=$image_id");
-    setFlash("L'image a été bien supprimée");
-    header('Location:work_edit.php?id=' . $image['work_id']);
-    die();
+
+    $query = $db->prepare("SELECT name, work_id FROM images WHERE id = :image_id");
+    $query->bindParam(":image_id", $image_id);
+    $query->execute();
+    $image = $query->fetch();
+
+    if ($image) {
+        $image_name = $image['name'];
+        $work_id = $image['work_id'];
+
+        $delete_query = $db->prepare("DELETE FROM images WHERE id = :image_id");
+        $delete_query->bindParam(":image_id", $image_id);
+        $delete_query->execute();
+
+        // Supprimer l'image du dossier
+        $image_path = IMAGES . '/works/' . $image_name;
+        if (file_exists($image_path)) {
+            unlink($image_path);
+        }
+
+        setFlash("L'image a été bien supprimée");
+        header('Location: work_edit.php?id=' . $work_id);
+        die();
+    } else {
+        setFlash("L'image n'a pas pu être trouvée", "danger");
+        header('Location: work.php');
+        die();
+    }
 }
+
 
 /**
  * RECUPERATION DE LA LISTE DES CATEGORIES
@@ -114,20 +143,33 @@ include '../partials/admin_header.php';
     </div>
     <?= csrfInput(); ?>
     <div>
-        <input type="file" name="image">
+        <label for="image">Image</label>
+        <input type="file" name="images[]" multiple>
     </div>
     <button type="submit">Enregistrer</button>
 </form>
 <?php
     $work_id = isset($_GET['id']) ? $db->quote($_GET['id']) : null;
-    $image_name = '';
+    $image_names = array();
     if ($work_id) {
-        $image_name = $db->query("SELECT name FROM images WHERE work_id = $work_id")->fetchColumn();
-    }    $image_path = WEBROOT . 'img/works/' . $image_name;
+        $image_names = $db->query("SELECT name FROM images WHERE work_id = $work_id")->fetchAll(PDO::FETCH_COLUMN);
+    }   
+    foreach($image_names as $image_name) {
+        $image_path = WEBROOT . 'img/works/' . $image_name;
+    
+        $query = $db->prepare("SELECT id FROM images WHERE name = :image_name");
+        $query->bindParam(":image_name", $image_name);
+        $query->execute();
+        $image = $query->fetch();
+    
+        if ($image) {
+            $image_id = $image['id'];
+            
+            echo '<a href="?delete_image=' . $image_id . '&amp;' . csrf() . '" onclick="return confirm(\'Sûr de sûr ?\');">';
+            echo '<img src="' . $image_path . '" alt="workimage" width="100">';
+            echo '</a>';
+        }
+    }
+    
 ?>
-<?php if ($image_name): ?>
-    <a href="?delete_image=<?= $work_id ?>&<?= csrf();?>" onclick="return confirm('Sûr de sûr ?');">
-        <img src="<?= WEBROOT . 'img/works/' . $image_name ?>" alt="workimage" width='100'>
-    </a>
-<?php endif; ?>
 <?php include '../partials/footer.php'; ?>
